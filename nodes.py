@@ -11,7 +11,7 @@ class AdvancedAlphaProcessor:
                 "midrange_cut": (["disable", "enable"], {"default": "disable"}),
                 "cut_threshold": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.01}),
                 "gamma_correction": ("FLOAT", {"default": 2.2, "min": 1.0, "max": 3.0, "step": 0.1}),
-                "remove_black_threshold": ("FLOAT", {"default": 0.05, "min": 0.0, "max": 1.0, "step": 0.01}),
+                "remove_black_threshold": ("FLOAT", {"default": 0.15, "min": 0.0, "max": 1.0, "step": 0.01}),
                 "force_grayscale": (["enable", "disable"], {"default": "enable"})
             }
         }
