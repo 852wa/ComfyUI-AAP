@@ -1,4 +1,3 @@
-import numpy as np
 import torch
 
 class AdvancedAlphaProcessor:
@@ -21,62 +20,56 @@ class AdvancedAlphaProcessor:
     CATEGORY = "Image Processing"
     FUNCTION = "convert"
 
-    def convert(self, image, invert_alpha, midrange_cut, cut_threshold, gamma_correction, remove_black_threshold, force_grayscale):
-        batch = image.cpu().numpy()
-        results_orig = []
-        results_processed = []
-        
-        for img in batch:
-            # ガンマ補正適用
-            img_linear = np.power(img, gamma_correction)
-            
-            # グレースケール変換
-            if force_grayscale == "enable":
-                gray = np.dot(img_linear[..., :3], [0.2126, 0.7152, 0.0722])
-                gray = np.clip(gray, 0, 1)
-                rgb = np.stack([gray]*3, axis=-1)
-            else:
-                rgb = img_linear[..., :3]
-            
-            # アルファチャンネル生成
-            alpha = np.dot(img[..., :3], [0.299, 0.587, 0.114])
-            if invert_alpha == "enable":
-                alpha = 1.0 - alpha
-                
-            # 中間色カット処理
-            if midrange_cut == "enable":
-                processed_alpha = np.where(alpha >= cut_threshold, 1.0, 0.0)
-            else:
-                processed_alpha = alpha.copy()
-            
-            # 元のアルファを保持
-            original_alpha = processed_alpha.copy()
-            
-            # 黒領域除去処理
-            black_mask = np.all(img[..., :3] < remove_black_threshold, axis=-1)
-            processed_alpha[black_mask] = 0.0
-            
-            # 事前乗算アルファ処理
-            def compose_rgba(rgb, alpha):
-                premult_rgb = rgb * alpha[..., np.newaxis]
-                rgba = np.concatenate([
-                    np.power(premult_rgb, 1.0/gamma_correction),
-                    alpha[..., np.newaxis]
-                ], axis=-1)
-                return rgba
-            
-            # オリジナルと処理済みを生成
-            rgba_orig = compose_rgba(rgb, original_alpha)
-            rgba_processed = compose_rgba(rgb, processed_alpha)
-            
-            results_orig.append(rgba_orig)
-            results_processed.append(rgba_processed)
-        
-        tensor_orig = torch.from_numpy(np.array(results_orig)).float()
-        tensor_processed = torch.from_numpy(np.array(results_processed)).float()
-        
-        return (tensor_orig, tensor_processed)
+    def compute_alpha(self, rgb: torch.Tensor, invert: str) -> torch.Tensor:
+        # RGB to Luminance conversion
+        alpha = torch.matmul(rgb, torch.tensor([0.299, 0.587, 0.114], device=rgb.device))
+        return torch.clamp(1.0 - alpha, 0, 1) if invert == "enable" else alpha
 
+    def apply_gamma(self, tensor: torch.Tensor, gamma: float) -> torch.Tensor:
+        return torch.clamp(tensor.pow(gamma), 0.0, 1.0)
+
+    def convert(self, image: torch.Tensor, invert_alpha: str, midrange_cut: str, 
+                cut_threshold: float, gamma_correction: float, 
+                remove_black_threshold: float, force_grayscale: str) -> tuple:
+        
+        device = image.device
+        B, H, W, C = image.shape
+        
+        # Gamma correction
+        linear_image = self.apply_gamma(image, gamma_correction)
+
+        # Grayscale conversion
+        if force_grayscale == "enable":
+            gray = torch.matmul(linear_image[..., :3], 
+                              torch.tensor([0.2126, 0.7152, 0.0722], device=device))
+            rgb = gray.unsqueeze(-1).repeat(1, 1, 1, 3)
+        else:
+            rgb = linear_image[..., :3]
+
+        # Alpha channel processing
+        alpha = self.compute_alpha(image[..., :3], invert_alpha)
+        
+        # Midrange cutting
+        if midrange_cut == "enable":
+            processed_alpha = (alpha > cut_threshold).float()
+        else:
+            processed_alpha = alpha.clone()
+
+        # Black removal mask
+        black_mask = torch.all(image[..., :3] < remove_black_threshold, dim=-1)
+        final_alpha = torch.where(black_mask, 0.0, processed_alpha)
+
+        # Compose output images
+        def compose_output(rgb: torch.Tensor, alpha: torch.Tensor) -> torch.Tensor:
+            premult = rgb * alpha.unsqueeze(-1)
+            srgb = torch.clamp(premult.pow(1.0/gamma_correction), 0.0, 1.0)
+            return torch.cat([srgb, alpha.unsqueeze(-1)], dim=-1)
+
+        orig_output = compose_output(rgb, alpha)
+        processed_output = compose_output(rgb, final_alpha)
+
+        return (orig_output, processed_output)
+    
 NODE_CLASS_MAPPINGS = {
     "AdvancedAlphaProcessor": AdvancedAlphaProcessor
 }
