@@ -7,4 +7,4 @@
 - グレーと透明で出力する
 が可能のシンプルなノードです。
 
-![image](https://github.com/852wa/ComfyUI-AdvancedAlphaProcessor/blob/master/sample.png)
+![image](https://github.com/852wa/ComfyUI-AAP/blob/master/sample.png)
