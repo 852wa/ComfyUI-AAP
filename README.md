@@ -24,3 +24,6 @@
   Output出力の黒部分をカットしてグレーを残すしきい値調整。Black Removed出力から出る。（midrange_cutは基本オフで使用する）
 - force_grayscale  
   グレースケールで実行する（デフォルトはオン　オンのほうが精度がいい）
+
+
+連番処理をする場合入力をLoad Imagesなどの複数入力へ変更。
