@@ -17,7 +17,7 @@ class AdvancedAlphaProcessor:
         }
     
     RETURN_TYPES = ("IMAGE", "IMAGE")
-    RETURN_NAMES = ("Original", "Black_Removed")
+    RETURN_NAMES = ("Output", "Black_Removed")
     CATEGORY = "Image Processing"
     FUNCTION = "convert"
 
