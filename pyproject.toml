@@ -1,0 +1,15 @@
+[project]
+name = "ComfyUI-AAP"
+description = "This is a custom node for ComfyUI.\nFeatures:Removes white areas in the input image by making them transparent based on brightness, Outputs in black and transparent, Outputs in gray and transparent.\nThis is a simple node with the above functionalities implemented. It also supports sequential processing."
+version = "1.0.0"
+license = {file = "LICENSE"}
+dependencies = ["numpy", "torch"]
+
+[project.urls]
+Repository = "https://github.com/852wa/ComfyUI-AAP"
+#  Used by Comfy Registry https://comfyregistry.org
+
+[tool.comfy]
+PublisherId = "hakoniwa"
+DisplayName = "ComfyUI-AAP"
+Icon = ""
