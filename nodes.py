@@ -33,7 +33,7 @@ class AdvancedAlphaProcessor:
                 remove_black_threshold: float, force_grayscale: str) -> tuple:
         
         device = image.device
-        B, H, W, C = image.shape
+        _B, _H, _W, _C = image.shape
         
         # Gamma correction
         linear_image = self.apply_gamma(image, gamma_correction)
@@ -41,21 +41,21 @@ class AdvancedAlphaProcessor:
         # Grayscale conversion
         if force_grayscale == "enable":
             gray = torch.matmul(linear_image[..., :3], 
-                              torch.tensor([0.2126, 0.7152, 0.0722], device=device))
+                            torch.tensor([0.2126, 0.7152, 0.0722], device=device))
             rgb = gray.unsqueeze(-1).repeat(1, 1, 1, 3)
         else:
             rgb = linear_image[..., :3]
 
         # Alpha channel processing
-        alpha = self.compute_alpha(image[..., :3], invert_alpha)
+        base_alpha = self.compute_alpha(image[..., :3], invert_alpha)
         
-        # Midrange cutting
+        # Midrange cutting (both outputs use this processed alpha)
         if midrange_cut == "enable":
-            processed_alpha = (alpha > cut_threshold).float()
+            processed_alpha = (base_alpha >= cut_threshold).float()  # Changed to >= for consistency
         else:
-            processed_alpha = alpha.clone()
+            processed_alpha = base_alpha.clone()
 
-        # Black removal mask
+        # Black removal mask (applies only to processed output)
         black_mask = torch.all(image[..., :3] < remove_black_threshold, dim=-1)
         final_alpha = torch.where(black_mask, 0.0, processed_alpha)
 
@@ -65,11 +65,12 @@ class AdvancedAlphaProcessor:
             srgb = torch.clamp(premult.pow(1.0/gamma_correction), 0.0, 1.0)
             return torch.cat([srgb, alpha.unsqueeze(-1)], dim=-1)
 
-        orig_output = compose_output(rgb, alpha)
+        # Both outputs use the midrange-cut processed alpha
+        orig_output = compose_output(rgb, processed_alpha)  # Changed from base_alpha to processed_alpha
         processed_output = compose_output(rgb, final_alpha)
 
         return (orig_output, processed_output)
-    
+
 NODE_CLASS_MAPPINGS = {
     "AdvancedAlphaProcessor": AdvancedAlphaProcessor
 }
