@@ -1,5 +1,5 @@
 [project]
-name = "ComfyUI-AAP"
+name = "aap"
 description = "This is a custom node for ComfyUI.\nFeatures:Removes white areas in the input image by making them transparent based on brightness, Outputs in black and transparent, Outputs in gray and transparent.\nThis is a simple node with the above functionalities implemented. It also supports sequential processing."
 version = "1.0.0"
 license = {file = "LICENSE"}
