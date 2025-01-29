@@ -1,4 +1,3 @@
-import numpy as np
 import torch
 
 class AdvancedAlphaProcessor:
@@ -21,61 +20,112 @@ class AdvancedAlphaProcessor:
     CATEGORY = "Image Processing"
     FUNCTION = "convert"
 
-    def convert(self, image, invert_alpha, midrange_cut, cut_threshold, gamma_correction, remove_black_threshold, force_grayscale):
-        batch = image.cpu().numpy()
-        results_orig = []
-        results_processed = []
+    def compute_alpha(self, rgb: torch.Tensor, invert: str) -> torch.Tensor:
+        """
+        RGB画像から輝度ベースのアルファチャンネルを計算。
+
+        Args:
+            rgb (torch.Tensor): 入力RGB画像テンソル。形状は[..., 3]である必要がある。
+            invert (str): アルファチャンネルを反転するかどうかを指定する。"enable"の場合は輝度の逆数を、"disable"の場合は輝度をアルファ値とする。
+
+        Returns:
+            torch.Tensor: 計算されたアルファチャンネル。形状は入力rgbと同じですが、最後の次元が1になる。
+        """
+        # RGBから輝度を計算
+        alpha = torch.matmul(rgb, torch.tensor([0.2126, 0.7152, 0.0722], device=rgb.device)) 
+        # invertが"enable"の場合、輝度の逆数をアルファ値とする
+        return torch.clamp(1.0 - alpha, 0, 1) if invert == "enable" else torch.clamp(alpha, 0, 1)
+
+    def apply_gamma(self, tensor: torch.Tensor, gamma: float) -> torch.Tensor:
+        """
+        テンソルにガンマ補正を適用する。
+
+        Args:
+            tensor (torch.Tensor): 入力テンソル。
+            gamma (float): ガンマ値。
+
+        Returns:
+            torch.Tensor: ガンマ補正されたテンソル。クランプされて0から1の範囲に収められる。
+        """
+        return torch.clamp(tensor.pow(1.0 / gamma), 0.0, 1.0)
+
+    def convert(self, image: torch.Tensor, invert_alpha: str, midrange_cut: str, 
+                cut_threshold: float, gamma_correction: float, 
+                remove_black_threshold: float, force_grayscale: str) -> tuple:
+        """
+        高度なアルファチャンネル処理を実行し、オプションで黒領域を除去。
+
+        Args:
+            image (torch.Tensor): 入力画像テンソル。形状は[B, H, W, C]である必要がある。
+            invert_alpha (str): アルファチャンネルを反転するかどうかを指定する。"enable"または"disable"。
+            midrange_cut (str): 中間色カットを適用するかどうかを指定する。"enable"または"disable"。
+            cut_threshold (float): 中間色カットの閾値。
+            gamma_correction (float): ガンマ補正値。
+            remove_black_threshold (float): 黒領域除去の閾値。
+            force_grayscale (str): 画像を強制的にグレースケールに変換するかどうかを指定する。"enable"または"disable"。
+
+        Returns:
+            tuple: 処理された画像と黒領域が除去された画像のタプル。
+        """
         
-        for img in batch:
-            # ガンマ補正適用
-            img_linear = np.power(img, gamma_correction)
-            
-            # グレースケール変換
-            if force_grayscale == "enable":
-                gray = np.dot(img_linear[..., :3], [0.2126, 0.7152, 0.0722])
-                gray = np.clip(gray, 0, 1)
-                rgb = np.stack([gray]*3, axis=-1)
-            else:
-                rgb = img_linear[..., :3]
-            
-            # アルファチャンネル生成
-            alpha = np.dot(img[..., :3], [0.299, 0.587, 0.114])
-            if invert_alpha == "enable":
-                alpha = 1.0 - alpha
-                
-            # 中間色カット処理
-            if midrange_cut == "enable":
-                processed_alpha = np.where(alpha >= cut_threshold, 1.0, 0.0)
-            else:
-                processed_alpha = alpha.copy()
-            
-            # 元のアルファを保持
-            original_alpha = processed_alpha.copy()
-            
-            # 黒領域除去処理
-            black_mask = np.all(img[..., :3] < remove_black_threshold, axis=-1)
-            processed_alpha[black_mask] = 0.0
-            
-            # 事前乗算アルファ処理
-            def compose_rgba(rgb, alpha):
-                premult_rgb = rgb * alpha[..., np.newaxis]
-                rgba = np.concatenate([
-                    np.power(premult_rgb, 1.0/gamma_correction),
-                    alpha[..., np.newaxis]
-                ], axis=-1)
-                return rgba
-            
-            # オリジナルと処理済みを生成
-            rgba_orig = compose_rgba(rgb, original_alpha)
-            rgba_processed = compose_rgba(rgb, processed_alpha)
-            
-            results_orig.append(rgba_orig)
-            results_processed.append(rgba_processed)
+        device = image.device
+        _B, _H, _W, _C = image.shape
         
-        tensor_orig = torch.from_numpy(np.array(results_orig)).float()
-        tensor_processed = torch.from_numpy(np.array(results_processed)).float()
+        # ガンマ補正を適用してリニアRGB空間に変換する
+        linear_image = self.apply_gamma(image, gamma_correction)
+
+        # グレースケール変換
+        if force_grayscale == "enable":
+            # RGBをグレースケールに変換
+            gray = torch.matmul(linear_image[..., :3], 
+                                torch.tensor([0.2126, 0.7152, 0.0722], device=device))
+            # グレースケール画像を3チャンネルに複製してRGB画像を作成
+            rgb = gray.unsqueeze(-1).repeat(1, 1, 1, 3)
+        else:
+            # 入力画像のRGBチャンネルをそのまま使用
+            rgb = linear_image[..., :3]
+
+        # アルファチャンネル生成
+        base_alpha = self.compute_alpha(image[..., :3], invert_alpha)
         
-        return (tensor_orig, tensor_processed)
+        # 中間色カット処理
+        if midrange_cut == "enable":
+            # 閾値以上のアルファ値を1、それ以外を0に設定し、中間色を削除
+            processed_alpha = (base_alpha >= cut_threshold).float()
+        else:
+            # 中間色カットを適用しない場合は、元のアルファ値をそのまま使用
+            processed_alpha = base_alpha.clone()
+
+        # 黒領域除去処理
+        # RGB値がすべて閾値未満のピクセルを黒と判定
+        black_mask = torch.all(image[..., :3] < remove_black_threshold, dim=-1)
+        # 黒領域のアルファ値を0に設定し、それ以外の領域はprocessed_alphaの値を使用
+        final_alpha = torch.where(black_mask, 0.0, processed_alpha)
+
+        # 事前乗算アルファ処理
+        def compose_output(rgb: torch.Tensor, alpha: torch.Tensor) -> torch.Tensor:
+            """
+            RGB画像とアルファチャンネルを合成し、事前乗算アルファを適用する。
+
+            Args:
+                rgb (torch.Tensor): RGB画像テンソル。
+                alpha (torch.Tensor): アルファチャンネルテンソル。
+
+            Returns:
+                torch.Tensor: 合成された画像テンソル。
+            """
+            # RGBにアルファを乗算して事前乗算アルファを適用
+            premult = rgb * alpha.unsqueeze(-1)
+            # ガンマ補正を適用してsRGB空間に戻す
+            srgb = torch.clamp(premult.pow(gamma_correction), 0.0, 1.0)
+            # sRGB画像とアルファチャンネルを結合して最終的な画像を作成
+            return torch.cat([srgb, alpha.unsqueeze(-1)], dim=-1)
+
+        # 中間色カット処理および黒除去処理前の画像と、処理後の画像を生成
+        orig_output = compose_output(rgb, processed_alpha)
+        processed_output = compose_output(rgb, final_alpha)
+
+        return (orig_output, processed_output)
 
 NODE_CLASS_MAPPINGS = {
     "AdvancedAlphaProcessor": AdvancedAlphaProcessor
